@@ -103,6 +103,12 @@ class DelDupFiles {
 			for (FileZipEntry newFileZip : newFilesLinkedListIterator.next()) {
 				LinkedList<FileZipEntry> dupLinkedList = officialHashMap.get(newFileZip);
 				boolean duplicated = false;
+				//
+				// Lazy Strategy:
+				// 1. Calculate CRC32 for the first 64k bytes (and file size) for a fast check.
+				// 2. If they don't match, they are not the same file.
+				// 3. If they match, scan the entire file to compare the full CRC32.
+				//
 				// If a potential match is found based on the unique key (size + partial CRC)
 				if (dupLinkedList != null) {
 					System.out.println("File "	+ newFileZip.getFile().toString());

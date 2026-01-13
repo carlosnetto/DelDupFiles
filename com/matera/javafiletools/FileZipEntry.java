@@ -70,7 +70,8 @@ public class FileZipEntry {
 
 	//
 	// Calculates the CRC32 of the first 64KB of the file.
-	// This is used as a "fast check" to quickly differentiate files.
+	// This is used as a "fast check" to quickly differentiate files (Lazy Strategy).
+	// If they match, we scan the entire file later to compare the CRC32 of the entire file.
 	//
 	private void calcCrc32_64k() {
 		int n;
