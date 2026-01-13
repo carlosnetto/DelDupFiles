@@ -58,7 +58,8 @@ public class FileZipEntry {
 				System.err.println(e);
 			} finally {
 				try {
-					fis.close();
+					if (fis != null)
+						fis.close();
 				} catch (IOException e) {
 					e.printStackTrace();
 				}
@@ -117,6 +118,8 @@ public class FileZipEntry {
 					crc32_64k = 0L;
 			} catch (IOException e) {
 				System.err.println(e);
+				// Ensure we don't leave this null to avoid NPE in getUniqueKey
+				if (crc32_64k == null) crc32_64k = 0L;
 			} finally {
 				try {
 					if (fis != null)

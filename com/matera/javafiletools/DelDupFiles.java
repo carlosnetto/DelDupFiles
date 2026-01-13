@@ -51,11 +51,12 @@ class DelDupFiles {
 		// Validate arguments and print usage if incorrect
 		//
 		if ((dumpOfficial && args.length - i != 1) || (!dumpOfficial && args.length -i != 2)) {
-			System.err.println("Usage: DupFiles [-yz] <Official Directory> <Directory with New Files>");
+			System.err.println("Usage: DupFiles [-yzl] <Official Directory> <Directory with New Files>");
+			System.err.println("       DupFiles -d [-zl] <Official Directory>");
 			System.err.println(" -y: delete all duplicated files without asking the user");
 			System.err.println(" -z: enter .zip files while navigating official directory");
 			System.err.println(" -l: follow Symbolic links");
-			System.err.println(" -d: dump official to sysout (don't specify new files>");
+			System.err.println(" -d: dump official directory index to stdout as CSV (filename, size, crc32_64k, date)");
 			System.exit(-1);
 		} else {
 			officialDir = new File(args[i++]);
@@ -131,15 +132,19 @@ class DelDupFiles {
 								newFileZip.getFile().delete();
 							} else {
 								System.out.print("Delete? (y/Y/n/N) :");
-								System.in.read(readline, 0, readline.length);
-								if ((char) readline[0] == 'y'
-										|| (char) readline[0] == 'Y') {
-									newFileZip.getFile().delete();
-									if ((char) readline[0] == 'Y')
-										deleteAll = true;
+								int bytesRead = System.in.read(readline, 0, readline.length);
+								if (bytesRead < 0) {
+									System.err.println("End of input stream detected. Exiting.");
+									System.exit(0);
 								}
-								if ((char) readline[0] == 'N')
-									break;
+								if (bytesRead > 0) {
+									char response = (char) readline[0];
+									if (response == 'y' || response == 'Y') {
+										newFileZip.getFile().delete();
+										if (response == 'Y') deleteAll = true;
+									}
+									if (response == 'N') break;
+								}
 							}
 						} catch (IOException e) {
 							e.printStackTrace();
