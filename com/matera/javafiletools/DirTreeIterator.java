@@ -1,3 +1,9 @@
+/*
+ * DirTreeIterator
+ * Author: Carlos Netto - carlos.netto@gmail.com
+ *
+ * An Iterator implementation that recursively traverses a directory tree.
+ */
 package com.matera.javafiletools;
 
 import java.io.File;
@@ -10,17 +16,17 @@ import java.util.Stack;
 class DirTreeIterator implements Iterator<File> {
 
 	//
-	// Iterator for the current level of the tree
+	// Iterator for the files in the current directory level
 	//
 	private Iterator<File> currentLevelFiles = null;
 
 	//
-	// Used to save the currentLevelFiles when I navigate into a directory
+	// Stack used to save the state of previous levels when navigating into a subdirectory
 	//
 	private Stack<Iterator<File>> previousLevelsFiles = null;
 
 	//
-	// Follow Symbolic Link?
+	// Flag to determine if Symbolic Links should be followed
 	//
 	boolean follow = false;
 
@@ -33,6 +39,9 @@ class DirTreeIterator implements Iterator<File> {
 		dirTreeIterator(file);
 	}
 
+	//
+	// Initialize the iterator with the root file/directory
+	//
 	void dirTreeIterator(File file) {
 		ArrayList<File> fileArrayList = new ArrayList<File>();
 		fileArrayList.add(file);
@@ -42,10 +51,10 @@ class DirTreeIterator implements Iterator<File> {
 
 	public boolean hasNext() {
 		//
-		// TODO: e se o Primeiro item aqui já é um symlink inválido ou um diretório vazio sem mais nada??
-		// o this.hasNext() deveria retornar false; Tem que bolar uma forma do hasNext() pular tudo que não presta.
-		// Talvez o "hasNext()" possa executar o next() e guardar numa variável local o resultado. Depois, quando o
-		// next() for chamado, devolve o que está na variável e a anula; se já estiver nula, faz o next() de fato.
+		// TODO: What if the first item here is already an invalid symlink or an empty directory with nothing else??
+		// this.hasNext() should return false; Must figure out a way for hasNext() to skip everything that is useless.
+		// Maybe "hasNext()" could execute next() and store the result in a local variable. Then, when
+		// next() is called, it returns what is in the variable and clears it; if it is already null, it performs the actual next().
 		//
 		return currentLevelFiles.hasNext();		
 	}
@@ -53,9 +62,9 @@ class DirTreeIterator implements Iterator<File> {
 	public File next() {
 		File returnFile = currentLevelFiles.next();
 		//
-		// If the returnFile is a directory, push the current directory in the
-		// stack
-		// and places a new Iterator in this new directory (returnFile)
+		// If the current file is a directory, we need to dive into it.
+		// Push the current iterator to the stack and create a new iterator
+		// for the subdirectory.
 		//
 		if (returnFile.isDirectory()) {
 			System.err.println(returnFile.toString());
@@ -70,11 +79,9 @@ class DirTreeIterator implements Iterator<File> {
 		}
 
 		//
-		// I have to leave "next" with a valid return for the next "next()" call
-		// to this class. If the currentLevelFiles has no Next (!hasNext()), I
-		// have to pop previous currentLevelFiles from the stack until I find
-		// one
-		// which has more elements yet.
+		// Ensure the iterator is ready for the subsequent call.
+		// If the current level is exhausted, pop from the stack to return to
+		// the previous directory level until we find one with more files.
 		//
 		while (!currentLevelFiles.hasNext() && !previousLevelsFiles.isEmpty()) {
 			currentLevelFiles = previousLevelsFiles.pop();

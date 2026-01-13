@@ -1,3 +1,10 @@
+/*
+ * FileHashMap
+ * Author: Carlos Netto - carlos.netto@gmail.com
+ *
+ * A specialized HashMap wrapper that indexes files by a unique key (Size + partial CRC).
+ * Handles collisions by storing a list of files for each key.
+ */
 package com.matera.javafiletools;
 
 import java.io.File;
@@ -13,6 +20,7 @@ import java.util.zip.ZipFile;
 
 public class FileHashMap {
 	private static final long serialVersionUID = -1502437921656142170L;
+	// Map storing the unique key and a list of files sharing that key
 	HashMap<String, LinkedList<FileZipEntry>> map = new HashMap<String, LinkedList<FileZipEntry>>();
 
 	public FileHashMap(Iterator<File> iterator) {
@@ -23,6 +31,9 @@ public class FileHashMap {
 		fileHashMap(iterator, enterZip);
 	}
 
+	//
+	// Populates the map by iterating over the provided file iterator
+	//
 	private void fileHashMap(Iterator<File> iterator, boolean enterZip) {
 		File file;
 
@@ -35,6 +46,7 @@ public class FileHashMap {
 			if (!Files.isRegularFile(file.toPath(),
 					java.nio.file.LinkOption.NOFOLLOW_LINKS))
 				continue;
+			// Add the regular file to the map
 			put(new FileZipEntry(file));
 			if (enterZip && file.getName().toUpperCase().endsWith(".ZIP")) {
 				ZipFile zf;
@@ -65,6 +77,9 @@ public class FileHashMap {
 		return fileLinkedList;
 	}
 
+	//
+	// Adds a file to the map. If the key exists, appends to the list (collision handling).
+	//
 	public LinkedList<FileZipEntry> put(FileZipEntry file) {
 		LinkedList<FileZipEntry> list = map.get(file.getUniqueKey());
 		if (list == null) {

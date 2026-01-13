@@ -1,3 +1,9 @@
+/*
+ * DelDupFiles
+ * Author: Carlos Netto - carlos.netto@gmail.com
+ *
+ * This program detects and deletes duplicate files by comparing a new directory against an official directory.
+ */
 package com.matera.javafiletools;
 
 import java.io.File;
@@ -21,6 +27,9 @@ class DelDupFiles {
 		System.err.println("(c) Carlos Netto");
 		int i = 0;
 
+		//
+		// Parse command line arguments
+		//
 		while (i < args.length && args[i].toString().charAt(0) == '-') {
 			switch (args[i++].toString().charAt(1)) {
 			case 'y':
@@ -38,6 +47,9 @@ class DelDupFiles {
 			}
 		}
 
+		//
+		// Validate arguments and print usage if incorrect
+		//
 		if ((dumpOfficial && args.length - i != 1) || (!dumpOfficial && args.length -i != 2)) {
 			System.err.println("Usage: DupFiles [-yz] <Official Directory> <Directory with New Files>");
 			System.err.println(" -y: delete all duplicated files without asking the user");
@@ -52,13 +64,13 @@ class DelDupFiles {
 		}
 
 		//
-		// Build the Hash for the <Official Directory>
+		// Build the index (Hash) for the <Official Directory>
 		//
 		System.err.println("Reading files under " + officialDir);
 		FileHashMap officialHashMap = new FileHashMap(new DirTreeIterator(officialDir, followSymLink), enterZip);
 
 		//
-		// Dump it?
+		// If dump mode is enabled, print the official directory index to stdout and exit
 		//
 		if (dumpOfficial) {
 			DateFormat formatter = new SimpleDateFormat("dd/MM/yyyy-H:M:S");
@@ -76,13 +88,13 @@ class DelDupFiles {
 		}
 
 		//
-		// Build the Hash for the "NewFiles" directory
+		// Build the index (Hash) for the "NewFiles" directory to be checked
 		//
 		System.err.println("Reading files under " + newFilesDir);
 		FileHashMap newFilesHashMap = new FileHashMap(new DirTreeIterator(newFilesDir, followSymLink));
 
 		//
-		// Check every new file if it already exists in the Official Directory
+		// Iterate through every new file to check if it already exists in the Official Directory
 		//
 		System.err.println("Find duplicated files in " + newFilesDir);
 		byte readline[] = new byte[512];
@@ -91,6 +103,7 @@ class DelDupFiles {
 			for (FileZipEntry newFileZip : newFilesLinkedListIterator.next()) {
 				LinkedList<FileZipEntry> dupLinkedList = officialHashMap.get(newFileZip);
 				boolean duplicated = false;
+				// If a potential match is found based on the unique key (size + partial CRC)
 				if (dupLinkedList != null) {
 					System.out.println("File "	+ newFileZip.getFile().toString());
 					System.out.println("Size:" + newFileZip.length()
@@ -99,12 +112,14 @@ class DelDupFiles {
 					for (FileZipEntry dupFileZip : dupLinkedList) {
 						System.out.println(" => " + dupFileZip.getFile().toString());
 						System.out.println("Size:" + dupFileZip.length() + " CRC32:" + dupFileZip.getCrc32());
+						// Perform full CRC32 check to confirm duplication
 						if (newFileZip.getCrc32().equals(dupFileZip.getCrc32()))
 							duplicated = true;
 					}
 					if (!duplicated) {
 						System.out.println("Uppss!!! It's not duplicated actually!");
 					} else {
+						// Handle deletion (either automatic or interactive)
 						try {
 							if (deleteAll) {
 								newFileZip.getFile().delete();
