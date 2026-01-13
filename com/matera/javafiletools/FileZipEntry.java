@@ -4,6 +4,9 @@
  *
  * Represents a file entity, which can be a standard file on the filesystem
  * or an entry inside a ZIP archive. Handles CRC calculation and size retrieval.
+ *
+ * Note: CRC32 is chosen over MD5 because ZIP files store the CRC32 checksum natively.
+ * This allows for instant retrieval without recalculation for files inside ZIPs.
  */
 package com.matera.javafiletools;
 

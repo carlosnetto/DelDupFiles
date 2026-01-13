@@ -3,6 +3,9 @@
  * Author: Carlos Netto - carlos.netto@gmail.com
  *
  * This program detects and deletes duplicate files by comparing a new directory against an official directory.
+ *
+ * Design Note: CRC32 is used instead of MD5 because ZIP files already contain the pre-calculated CRC32.
+ * This avoids the need to read/decompress the entire file content when checking ZIP entries.
  */
 package com.matera.javafiletools;
 
