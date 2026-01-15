@@ -49,9 +49,7 @@ public class FileHashMap {
 			// Add the regular file to the map
 			put(new FileZipEntry(file));
 			if (enterZip && file.getName().toUpperCase().endsWith(".ZIP")) {
-				ZipFile zf;
-				try {
-					zf = new ZipFile(file, ZipFile.OPEN_READ);
+				try (ZipFile zf = new ZipFile(file, ZipFile.OPEN_READ)) {
 					for (Enumeration<? extends ZipEntry> zipEntries = zf.entries(); zipEntries.hasMoreElements();) {
 						ZipEntry ze = (ZipEntry) zipEntries.nextElement();
 						if (!ze.isDirectory()) {
@@ -59,8 +57,6 @@ public class FileHashMap {
 						}
 					}
 				} catch (IOException e) {
-					e.printStackTrace();
-				} catch (Exception e) {
 					e.printStackTrace();
 				}
 			}

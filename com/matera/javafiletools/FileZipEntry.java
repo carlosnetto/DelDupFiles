@@ -47,25 +47,15 @@ public class FileZipEntry {
 		} else { // It's a regular file; calculate CRC32 by reading the whole file
 			int n;
 			byte buf[] = new byte[1024 * 100]; // let's read blocks of 100k
-			FileInputStream fis = null;
-
+			
 			CRC32 auxCrc32 = new CRC32();
 			auxCrc32.reset();
-			try {
-				fis = new FileInputStream(fi);
+			try (FileInputStream fis = new FileInputStream(fi)) {
 				while ((n = fis.read(buf)) != -1) {
 					auxCrc32.update(buf, 0, n);
 				}
-				fis.close();
 			} catch (IOException e) {
 				System.err.println(e);
-			} finally {
-				try {
-					if (fis != null)
-						fis.close();
-				} catch (IOException e) {
-					e.printStackTrace();
-				}
 			}
 			crc32 = auxCrc32.getValue();
 			size = fi.length();
@@ -78,58 +68,42 @@ public class FileZipEntry {
 	// If they match, we scan the entire file later to compare the CRC32 of the entire file.
 	//
 	private void calcCrc32_64k() {
-		int n;
 		byte buf[] = new byte[1024 * 64]; // let's calculate only 1st 64kb of
 											// the file
 		CRC32 auxCrc32 = new CRC32();
 		auxCrc32.reset();
 
 		if (ze != null) { // It's a ZIP entry actually
-			InputStream zis = null;
-			try {
+			try (InputStream zis = zf.getInputStream(ze)) {
 				size = ze.getSize();
 				if (size > 0) {
-					zis = zf.getInputStream(ze);
-					n = zis.read(buf);
-					auxCrc32.update(buf, 0, n);
+					int n = zis.read(buf);
+					if (n > 0) {
+						auxCrc32.update(buf, 0, n);
+					}
 					crc32_64k = auxCrc32.getValue();
-					auxCrc32 = null;
-					zis.close();
-				} else
+				} else {
 					crc32_64k = 0L;
+				}
 			} catch (IOException e) {
 				System.err.println(e);
-			} finally {
-				try {
-					if (zis != null)
-						zis.close();
-				} catch (IOException e) {
-					e.printStackTrace();
-				}
+				crc32_64k = 0L; // Ensure not null on error
 			}
 		} else {
-			FileInputStream fis = null;
-			try {
-				size = fi.length();
-				if (size > 0) {
-					fis = new FileInputStream(fi);
-					n = fis.read(buf);
-					auxCrc32.update(buf, 0, n);
+			size = fi.length();
+			if (size > 0) {
+				try (FileInputStream fis = new FileInputStream(fi)) {
+					int n = fis.read(buf);
+					if (n > 0) {
+						auxCrc32.update(buf, 0, n);
+					}
 					crc32_64k = auxCrc32.getValue();
-					fis.close();
-				} else
-					crc32_64k = 0L;
-			} catch (IOException e) {
-				System.err.println(e);
-				// Ensure we don't leave this null to avoid NPE in getUniqueKey
-				if (crc32_64k == null) crc32_64k = 0L;
-			} finally {
-				try {
-					if (fis != null)
-						fis.close();
 				} catch (IOException e) {
-					e.printStackTrace();
+					System.err.println(e);
+					crc32_64k = 0L; // Ensure not null on error
 				}
+			} else {
+				crc32_64k = 0L;
 			}
 		}
 	}

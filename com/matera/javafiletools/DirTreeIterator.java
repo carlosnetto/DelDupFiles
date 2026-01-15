@@ -73,8 +73,13 @@ class DirTreeIterator implements Iterator<File> {
 			} else if (Files.isSymbolicLink(returnFile.toPath()) && !follow) {
 				System.err.println("Warning: Not Following " + returnFile.toString() + " Symbolic Link");
 			} else {
-				previousLevelsFiles.push(currentLevelFiles);
-				currentLevelFiles = Arrays.asList((File[]) returnFile.listFiles()).iterator();
+				File[] files = returnFile.listFiles();
+				if (files != null) {
+					previousLevelsFiles.push(currentLevelFiles);
+					currentLevelFiles = Arrays.asList(files).iterator();
+				} else {
+					System.err.println("Warning: could not list files in directory " + returnFile.toString());
+				}
 			}
 		}
 
