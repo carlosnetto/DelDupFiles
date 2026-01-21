@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
+import java.util.NoSuchElementException;
 import java.util.Stack;
 
 class DirTreeIterator implements Iterator<File> {
@@ -24,6 +25,11 @@ class DirTreeIterator implements Iterator<File> {
 	// Stack used to save the state of previous levels when navigating into a subdirectory
 	//
 	private Stack<Iterator<File>> previousLevelsFiles = null;
+
+	//
+	// Buffer for the next valid file to be returned
+	//
+	private File nextFile = null;
 
 	//
 	// Flag to determine if Symbolic Links should be followed
@@ -47,55 +53,62 @@ class DirTreeIterator implements Iterator<File> {
 		fileArrayList.add(file);
 		currentLevelFiles = fileArrayList.iterator();
 		previousLevelsFiles = new Stack<Iterator<File>>();
+		nextFile = null;
+	}
+
+	//
+	// Finds the next valid file or directory, skipping special files.
+	//
+	private void findNext() {
+		while (nextFile == null) {
+			if (!currentLevelFiles.hasNext()) {
+				if (previousLevelsFiles.isEmpty()) {
+					return;
+				}
+				currentLevelFiles = previousLevelsFiles.pop();
+				continue;
+			}
+
+			File f = currentLevelFiles.next();
+
+			if (f.isDirectory()) {
+				System.err.println(f.toString());
+				if (!f.canRead()) {
+					System.err.println("Warning: could not read directory " + f.toString());
+				} else if (Files.isSymbolicLink(f.toPath()) && !follow) {
+					System.err.println("Warning: Not Following " + f.toString() + " Symbolic Link");
+				} else {
+					File[] files = f.listFiles();
+					if (files != null) {
+						previousLevelsFiles.push(currentLevelFiles);
+						currentLevelFiles = Arrays.asList(files).iterator();
+					} else {
+						System.err.println("Warning: could not list files in directory " + f.toString());
+					}
+				}
+				nextFile = f;
+			} else if (Files.isRegularFile(f.toPath())) {
+				nextFile = f;
+			} else {
+				System.err.println("Skipping special file: " + f.toString());
+			}
+		}
 	}
 
 	public boolean hasNext() {
-		//
-		// TODO: What if the first item here is already an invalid symlink or an empty directory with nothing else??
-		// this.hasNext() should return false; Must figure out a way for hasNext() to skip everything that is useless.
-		// Maybe "hasNext()" could execute next() and store the result in a local variable. Then, when
-		// next() is called, it returns what is in the variable and clears it; if it is already null, it performs the actual next().
-		//
-		return currentLevelFiles.hasNext();		
+		if (nextFile == null) {
+			findNext();
+		}
+		return nextFile != null;
 	}
 
 	public File next() {
-		File returnFile = currentLevelFiles.next();
-		//
-		// If the current file is a directory, we need to dive into it.
-		// Push the current iterator to the stack and create a new iterator
-		// for the subdirectory.
-		//
-		if (returnFile.isDirectory()) {
-			System.err.println(returnFile.toString());
-			if (!returnFile.canRead()) {
-				System.err.println("Warning: could not read directory " + returnFile.toString());
-			} else if (Files.isSymbolicLink(returnFile.toPath()) && !follow) {
-				System.err.println("Warning: Not Following " + returnFile.toString() + " Symbolic Link");
-			} else {
-				File[] files = returnFile.listFiles();
-				if (files != null) {
-					previousLevelsFiles.push(currentLevelFiles);
-					currentLevelFiles = Arrays.asList(files).iterator();
-				} else {
-					System.err.println("Warning: could not list files in directory " + returnFile.toString());
-				}
-			}
+		if (!hasNext()) {
+			throw new NoSuchElementException();
 		}
-
-		//
-		// Ensure the iterator is ready for the subsequent call.
-		// If the current level is exhausted, pop from the stack to return to
-		// the previous directory level until we find one with more files.
-		//
-		while (!currentLevelFiles.hasNext() && !previousLevelsFiles.isEmpty()) {
-			currentLevelFiles = previousLevelsFiles.pop();
-		}
-
-		//
-		// Now Return the result
-		//
-		return returnFile;
+		File result = nextFile;
+		nextFile = null;
+		return result;
 	}
 
 	public void remove() {
