@@ -2,105 +2,110 @@
  * FileZipEntry
  * Author: Carlos Netto - carlos.netto@gmail.com
  *
- * Represents a file entity, which can be a standard file on the filesystem
- * or an entry inside a ZIP archive. Handles CRC calculation and size retrieval.
+ * LICENSE: This software is 100% open source. You can use, modify, copy, 
+ * or distribute it as you wish without limitations.
  *
- * Note: CRC32 is chosen over MD5 because ZIP files store the CRC32 checksum natively.
- * This allows for instant retrieval without recalculation for files inside ZIPs.
+ * NO WARRANTY: THIS SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND.
+ * THE AUTHOR IS NOT LIABLE FOR ANY DATA LOSS (INCLUDING VALUABLE PICTURES).
+ * ALWAYS MAKE BACKUPS!
+ *
+ * Represents a file entity, which can be a standard file on the filesystem
+ * or an entry inside a ZIP archive.
+ *
+ * Performance Strategy:
+ * 1. Lazy Calculation: CRC32 and Size are only calculated when first requested.
+ * 2. ZIP Optimization: ZIP files store the CRC32 of their entries natively. 
+ *    We retrieve this value without reading/decompressing the data.
  */
 package com.matera.javafiletools;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 public class FileZipEntry {
-	File fi = null;
-	ZipFile zf = null;
-	ZipEntry ze = null;
+	/** The physical file on disk (or the ZIP container if ze != null). */
+	private final File fi;
+	private ZipFile zf = null;
+	private ZipEntry ze = null;
 
-	Long crc32 = null;
-	Long crc32_64k = null;
-	Long size = null;
+	/** Cached values for performance. */
+	private Long crc32 = null;
+	private Long crc32_64k = null;
+	private Long size = null;
 
+	/** Constructor for a standard OS file. */
 	public FileZipEntry(File f) {
-		fi = f;
+		this.fi = f;
 	}
 
+	/** Constructor for an entry inside a ZIP file. */
 	public FileZipEntry(ZipEntry z, ZipFile fz, File f) {
-		fi = f;
-		zf = fz;
-		ze = z;
+		this.fi = f;
+		this.zf = fz;
+		this.ze = z;
 	}
 
-	//
-	// Calculates the CRC32 of the entire file.
-	//
+	/**
+	 * Calculates the full CRC32 of the file content.
+	 */
 	private void calcCrc32() {
-		if (ze != null) { // It's a ZipEntry; everything is ready to be used
+		if (ze != null) { 
+			// ZIP Optimization: No need to read the file! 
+			// The ZIP header already contains the CRC32.
 			crc32 = ze.getCrc();
 			size = ze.getSize();
-		} else { // It's a regular file; calculate CRC32 by reading the whole file
-			int n;
-			byte buf[] = new byte[1024 * 100]; // let's read blocks of 100k
-			
-			CRC32 auxCrc32 = new CRC32();
-			auxCrc32.reset();
-			try (FileInputStream fis = new FileInputStream(fi)) {
+		} else { 
+			// Standard File: Must read the entire content to calculate CRC.
+			var buf = new byte[1024 * 100]; 
+			var auxCrc32 = new CRC32();
+			try (var fis = new FileInputStream(fi)) {
+				int n;
 				while ((n = fis.read(buf)) != -1) {
 					auxCrc32.update(buf, 0, n);
 				}
 			} catch (IOException e) {
-				System.err.println(e);
+				System.err.println("Error calculating CRC32 for " + fi + ": " + e.getMessage());
 			}
 			crc32 = auxCrc32.getValue();
 			size = fi.length();
 		}
 	}
 
-	//
-	// Calculates the CRC32 of the first 64KB of the file.
-	// This is used as a "fast check" to quickly differentiate files (Lazy Strategy).
-	// If they match, we scan the entire file later to compare the CRC32 of the entire file.
-	//
+	/**
+	 * Calculates the CRC32 of the first 64KB (Partial CRC).
+	 * Used as a "Lazy Key" for fast O(1) lookups in the Map.
+	 */
 	private void calcCrc32_64k() {
-		byte buf[] = new byte[1024 * 64]; // let's calculate only 1st 64kb of
-											// the file
-		CRC32 auxCrc32 = new CRC32();
-		auxCrc32.reset();
+		var buf = new byte[1024 * 64]; 
+		var auxCrc32 = new CRC32();
 
-		if (ze != null) { // It's a ZIP entry actually
-			try (InputStream zis = zf.getInputStream(ze)) {
+		if (ze != null) { 
+			// For ZIP entries, we still have to read the first bytes if we want a partial CRC.
+			try (var zis = zf.getInputStream(ze)) {
 				size = ze.getSize();
 				if (size > 0) {
-					int n = zis.read(buf);
-					if (n > 0) {
-						auxCrc32.update(buf, 0, n);
-					}
+					var n = zis.read(buf);
+					if (n > 0) auxCrc32.update(buf, 0, n);
 					crc32_64k = auxCrc32.getValue();
 				} else {
 					crc32_64k = 0L;
 				}
 			} catch (IOException e) {
-				System.err.println(e);
-				crc32_64k = 0L; // Ensure not null on error
+				crc32_64k = 0L;
 			}
 		} else {
 			size = fi.length();
 			if (size > 0) {
-				try (FileInputStream fis = new FileInputStream(fi)) {
-					int n = fis.read(buf);
-					if (n > 0) {
-						auxCrc32.update(buf, 0, n);
-					}
+				try (var fis = new FileInputStream(fi)) {
+					var n = fis.read(buf);
+					if (n > 0) auxCrc32.update(buf, 0, n);
 					crc32_64k = auxCrc32.getValue();
 				} catch (IOException e) {
-					System.err.println(e);
-					crc32_64k = 0L; // Ensure not null on error
+					crc32_64k = 0L;
 				}
 			} else {
 				crc32_64k = 0L;
@@ -112,64 +117,42 @@ public class FileZipEntry {
 		return fi;
 	}
 
-	//
-	// Returns the full CRC32, calculating it if necessary.
-	//
+	/** Returns the full CRC32, calculating it once if needed. */
 	public Long getCrc32() {
-		if (crc32 == null) {
-			calcCrc32();
-		}
+		if (crc32 == null) calcCrc32();
 		return crc32;
 	}
 
-	//
-	// Returns the partial CRC32 (first 64KB), calculating it if necessary.
-	//
+	/** Returns the partial CRC32 of the first 64KB. */
 	public Long getCrc32_64k() {
-		if (crc32_64k == null) {
-			calcCrc32_64k();
-		}
+		if (crc32_64k == null) calcCrc32_64k();
 		return crc32_64k;
 	}
 
-	//
-	// Returns the file size. Optimizes calculation based on file type.
-	//
+	/** Returns the file size, using cached value if available. */
 	public Long length() {
-		if (size == null)
-			if (ze == null) { // It's not a ZIP; cheaper to calc Crc32_64k
-				calcCrc32_64k();
-			} else { // It's a ZIP; cheaper to calc CRC32
-				calcCrc32();
-			}
+		if (size == null) {
+			if (ze == null) calcCrc32_64k(); // Size is set during partial CRC calc
+			else calcCrc32();               // Size is set during full CRC calc
+		}
 		return size;
 	}
 
-	//
-	// Generates a unique key for the file based on the partial CRC32 and file size.
-	// This key is used for the initial hash map lookup.
-	//
+	/**
+	 * Generates a key for hashing. 
+	 * Format: "partialCRC:size"
+	 */
 	public String getUniqueKey() {
-		if (crc32_64k == null) {
-			calcCrc32_64k();
-		}
-		return crc32_64k.toString() + ":" + size.toString();
+		if (crc32_64k == null) calcCrc32_64k();
+		return crc32_64k + ":" + size;
 	}
 	
-	public Long getDate () {
-		if (ze == null) {
-			return fi.lastModified();
-		} else {
-			return ze.getTime();
-		}
+	public Long getDate() {
+		return (ze == null) ? fi.lastModified() : ze.getTime();
 	}
 
+	@Override
 	public String toString() {
-		if (ze != null) {
-			return fi.toString() + "|" + ze.toString();
-		} else {
-			return fi.toString();
-		}
-
+		return (ze != null) ? fi + "|" + ze.getName() : fi.toString();
 	}
 }

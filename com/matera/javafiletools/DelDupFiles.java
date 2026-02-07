@@ -2,64 +2,80 @@
  * DelDupFiles
  * Author: Carlos Netto - carlos.netto@gmail.com
  *
- * This program detects and deletes duplicate files by comparing a new directory against an official directory.
+ * LICENSE: This software is 100% open source. You can use, modify, copy, 
+ * or distribute it as you wish without limitations.
  *
- * Design Note: CRC32 is used instead of MD5 because ZIP files already contain the pre-calculated CRC32.
- * This avoids the need to read/decompress the entire file content when checking ZIP entries.
+ * NO WARRANTY: THIS SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND.
+ * THE AUTHOR IS NOT LIABLE FOR ANY DATA LOSS (INCLUDING VALUABLE PICTURES).
+ * ALWAYS MAKE BACKUPS!
+ *
+ * This program detects and deletes duplicate files by comparing a new directory 
+ * against an "Official" directory (the repository of truth).
+ *
+ * Logic Overview:
+ * 1. Build an index (FileHashMap) of the Official Directory.
+ * 2. If '-z' is enabled, the indexer opens ZIP files and indexes their entries as if 
+ *    they were loose files.
+ * 3. Iterate through the "New Files" directory.
+ * 4. For each new file, query the index using a "Lazy Strategy":
+ *    - Initial lookup uses a key composed of (FileSize + CRC32 of first 64KB).
+ *    - If a match is found in the Map, a full CRC32 check of the entire file 
+ *      is performed to confirm identity.
+ * 5. Handle duplicates based on user input (Interactive) or '-y' (Automatic).
  */
 package com.matera.javafiletools;
 
 import java.io.File;
 import java.io.IOException;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
-import java.util.Calendar;
-import java.util.Iterator;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.LinkedList;
+import java.util.Scanner;
 
 class DelDupFiles {
+	/**
+	 * Main entry point. Parses CLI arguments and executes the comparison logic.
+	 */
 	static public void main(String args[]) {
-		boolean deleteAll = false;
-		boolean enterZip = false;
-		boolean followSymLink = false;
-		boolean dumpOfficial = false;
+		var deleteAll = false;
+		var enterZip = false;
+		var followSymLink = false;
+		var dumpOfficial = false;
 		File officialDir = null;
 		File newFilesDir = null;
 
-		System.err.println("DelDupFiles v0.4 - BETA - (Nov-8th, 2014)");
+		System.err.println("DelDupFiles v0.5 - Java 25 - (Feb-7th, 2026)");
 		System.err.println("(c) Carlos Netto");
 		int i = 0;
 
 		//
 		// Parse command line arguments
 		//
-		while (i < args.length && args[i].toString().charAt(0) == '-') {
-			switch (args[i++].toString().charAt(1)) {
-			case 'y':
-				deleteAll = true;
-				break;
-			case 'z':
-				enterZip = true;
-				break;
-			case 'l':
-				followSymLink = true;
-				break;
-			case 'd':
-				dumpOfficial = true;
-				break;
+		while (i < args.length && args[i].charAt(0) == '-') {
+			var arg = args[i++];
+			for (int j = 1; j < arg.length(); j++) {
+				switch (arg.charAt(j)) {
+					case 'y' -> deleteAll = true;     // -y: automatic deletion
+					case 'z' -> enterZip = true;      // -z: index zip entries
+					case 'l' -> followSymLink = true; // -l: follow symlinks
+					case 'd' -> dumpOfficial = true;  // -d: CSV export mode
+				}
 			}
 		}
 
 		//
-		// Validate arguments and print usage if incorrect
+		// Validate arguments and print usage text block if incorrect
 		//
-		if ((dumpOfficial && args.length - i != 1) || (!dumpOfficial && args.length -i != 2)) {
-			System.err.println("Usage: DupFiles [-yzl] <Official Directory> <Directory with New Files>");
-			System.err.println("       DupFiles -d [-zl] <Official Directory>");
-			System.err.println(" -y: delete all duplicated files without asking the user");
-			System.err.println(" -z: enter .zip files while navigating official directory");
-			System.err.println(" -l: follow Symbolic links");
-			System.err.println(" -d: dump official directory index to stdout as CSV (filename, size, crc32_64k, date)");
+		if ((dumpOfficial && args.length - i != 1) || (!dumpOfficial && args.length - i != 2)) {
+			System.err.println("""
+					Usage: DupFiles [-yzl] <Official Directory> <Directory with New Files>
+					       DupFiles -d [-zl] <Official Directory>
+					 -y: delete all duplicated files without asking the user
+					 -z: enter .zip files while navigating official directory
+					 -l: follow Symbolic links
+					 -d: dump official directory index to stdout as CSV (filename, size, crc32_64k, date)
+					""");
 			System.exit(-1);
 		} else {
 			officialDir = new File(args[i++]);
@@ -68,92 +84,91 @@ class DelDupFiles {
 		}
 
 		//
-		// Build the index (Hash) for the <Official Directory>
+		// STEP 1: Build the index for the <Official Directory>
+		// We use DirTreeIterator to walk the tree without recursion to avoid StackOverflow.
 		//
 		System.err.println("Reading files under " + officialDir);
-		FileHashMap officialHashMap = new FileHashMap(new DirTreeIterator(officialDir, followSymLink), enterZip);
+		var officialHashMap = new FileHashMap(new DirTreeIterator(officialDir, followSymLink), enterZip);
 
 		//
-		// If dump mode is enabled, print the official directory index to stdout and exit
+		// STEP 2: Handle CSV Dump mode
+		// Useful for creating a searchable text snapshot of the repository.
 		//
 		if (dumpOfficial) {
-			DateFormat formatter = new SimpleDateFormat("dd/MM/yyyy-H:M:S");
-			Calendar calendar = Calendar.getInstance();
-			Iterator<LinkedList<FileZipEntry>> ill = officialHashMap.values().iterator();
-			while (ill.hasNext()) {
-				for (FileZipEntry fileZip : ill.next()) {
-					calendar.setTimeInMillis(fileZip.getDate());
+			var formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy-HH:mm:ss")
+					.withZone(ZoneId.systemDefault());
+			for (var entries : officialHashMap.values()) {
+				for (var fileZip : entries) {
+					var dateStr = formatter.format(Instant.ofEpochMilli(fileZip.getDate()));
 					System.out.println("\"" + fileZip.toString() + "\","
 							+ fileZip.length() + "," + fileZip.getCrc32_64k() + ","
-							+ formatter.format(calendar.getTime()));
+							+ dateStr);
 				}
 			}
 			System.exit(0);
 		}
 
 		//
-		// Build the index (Hash) for the "NewFiles" directory to be checked
+		// STEP 3: Build the index for the "NewFiles" directory.
 		//
 		System.err.println("Reading files under " + newFilesDir);
-		FileHashMap newFilesHashMap = new FileHashMap(new DirTreeIterator(newFilesDir, followSymLink));
+		var newFilesHashMap = new FileHashMap(new DirTreeIterator(newFilesDir, followSymLink));
 
 		//
-		// Iterate through every new file to check if it already exists in the Official Directory
+		// STEP 4: Detect Duplicates
+		// We iterate over the "New Files" and check them against the "Official" index.
 		//
 		System.err.println("Find duplicated files in " + newFilesDir);
-		byte readline[] = new byte[512];
-		Iterator<LinkedList<FileZipEntry>> newFilesLinkedListIterator = newFilesHashMap.values().iterator();
-		while (newFilesLinkedListIterator.hasNext()) {
-			for (FileZipEntry newFileZip : newFilesLinkedListIterator.next()) {
-				LinkedList<FileZipEntry> dupLinkedList = officialHashMap.get(newFileZip);
-				boolean duplicated = false;
-				//
-				// Lazy Strategy:
-				// 1. Calculate CRC32 for the first 64k bytes (and file size) for a fast check.
-				// 2. If they don't match, they are not the same file.
-				// 3. If they match, scan the entire file to compare the full CRC32.
-				//
-				// If a potential match is found based on the unique key (size + partial CRC)
+		var scanner = new Scanner(System.in);
+		for (var entries : newFilesHashMap.values()) {
+			for (var newFileZip : entries) {
+				// Query the official index using the Lazy Key (Size + Partial CRC)
+				var dupLinkedList = officialHashMap.get(newFileZip);
+				var duplicated = false;
+
+				// If there's a hit on the Lazy Key, we verify the full content.
 				if (dupLinkedList != null) {
-					System.out.println("File "	+ newFileZip.getFile().toString());
+					System.out.println("File " + newFileZip.getFile().toString());
 					System.out.println("Size:" + newFileZip.length()
 							+ " CRC32:" + newFileZip.getCrc32()
 							+ " is duplicated at:");
-					for (FileZipEntry dupFileZip : dupLinkedList) {
+					
+					for (var dupFileZip : dupLinkedList) {
 						System.out.println(" => " + dupFileZip.getFile().toString());
 						System.out.println("Size:" + dupFileZip.length() + " CRC32:" + dupFileZip.getCrc32());
-						// Perform full CRC32 check to confirm duplication
+						
+						// The ultimate proof: check the full file CRC32
 						if (newFileZip.getCrc32().equals(dupFileZip.getCrc32()))
 							duplicated = true;
 					}
+
 					if (!duplicated) {
 						System.out.println("Uppss!!! It's not duplicated actually!");
 					} else {
-						// Handle deletion (either automatic or interactive)
-						try {
-							if (deleteAll) {
-								newFileZip.getFile().delete();
-							} else {
-								System.out.print("Delete? (y/Y/n/N) :");
-								int bytesRead = System.in.read(readline, 0, readline.length);
-								if (bytesRead < 0) {
-									System.err.println("End of input stream detected. Exiting.");
-									System.exit(0);
-								}
-								if (bytesRead > 0) {
-									char response = (char) readline[0];
+						// STEP 5: Deletion logic
+						if (deleteAll) {
+							newFileZip.getFile().delete();
+						} else {
+							System.out.print("Delete? (y/Y/n/N) :");
+							if (scanner.hasNextLine()) {
+								var responseLine = scanner.nextLine().trim();
+								if (!responseLine.isEmpty()) {
+									var response = responseLine.charAt(0);
 									if (response == 'y' || response == 'Y') {
 										newFileZip.getFile().delete();
-										if (response == 'Y') deleteAll = true;
+										// 'Y' (uppercase) acts as "Yes to all remaining"
+										if (response == 'Y')
+											deleteAll = true;
+									} else if (response == 'N' || response == 'n') {
+										// Skip deletion for this file
 									}
-									if (response == 'N') break;
 								}
+							} else {
+								System.err.println("End of input stream detected. Exiting.");
+								System.exit(0);
 							}
-						} catch (IOException e) {
-							e.printStackTrace();
 						}
 					}
-
 				}
 			}
 		}

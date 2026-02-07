@@ -2,99 +2,106 @@
  * DirTreeIterator
  * Author: Carlos Netto - carlos.netto@gmail.com
  *
+ * LICENSE: This software is 100% open source. You can use, modify, copy, 
+ * or distribute it as you wish without limitations.
+ *
+ * NO WARRANTY: THIS SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND.
+ * THE AUTHOR IS NOT LIABLE FOR ANY DATA LOSS (INCLUDING VALUABLE PICTURES).
+ * ALWAYS MAKE BACKUPS!
+ *
  * An Iterator implementation that recursively traverses a directory tree.
+ * 
+ * Design Note: This implementation is iterative (using a Deque as a stack) 
+ * rather than recursive. This avoids StackOverflowErrors when processing 
+ * extremely deep directory structures.
  */
 package com.matera.javafiletools;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Deque;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
-import java.util.Stack;
 
 class DirTreeIterator implements Iterator<File> {
 
-	//
-	// Iterator for the files in the current directory level
-	//
+	/** Iterator for the files in the current directory level. */
 	private Iterator<File> currentLevelFiles = null;
 
-	//
-	// Stack used to save the state of previous levels when navigating into a subdirectory
-	//
-	private Stack<Iterator<File>> previousLevelsFiles = null;
+	/** Deque used as a stack to save the state of parent directories. */
+	private final Deque<Iterator<File>> previousLevelsFiles = new ArrayDeque<>();
 
-	//
-	// Buffer for the next valid file to be returned
-	//
+	/** Look-ahead buffer for the next file to be returned. */
 	private File nextFile = null;
 
-	//
-	// Flag to determine if Symbolic Links should be followed
-	//
-	boolean follow = false;
+	/** Whether to follow Symbolic Links. */
+	private boolean follow = false;
 
 	DirTreeIterator(File file) {
-		dirTreeIterator(file);
+		initialize(file);
 	}
 
 	DirTreeIterator(File file, boolean followSymLink) {
-		follow = followSymLink;
-		dirTreeIterator(file);
+		this.follow = followSymLink;
+		initialize(file);
 	}
 
-	//
-	// Initialize the iterator with the root file/directory
-	//
-	void dirTreeIterator(File file) {
-		ArrayList<File> fileArrayList = new ArrayList<File>();
+	/**
+	 * Prepares the iterator starting from a root file or directory.
+	 */
+	private void initialize(File file) {
+		var fileArrayList = new ArrayList<File>();
 		fileArrayList.add(file);
 		currentLevelFiles = fileArrayList.iterator();
-		previousLevelsFiles = new Stack<Iterator<File>>();
 		nextFile = null;
 	}
 
-	//
-	// Finds the next valid file or directory, skipping special files.
-	//
+	/**
+	 * Scans the filesystem to find the next available file or directory.
+	 * It descends into directories and pushes the current state onto the stack.
+	 */
 	private void findNext() {
 		while (nextFile == null) {
+			// If current directory is exhausted, pop the parent directory's iterator
 			if (!currentLevelFiles.hasNext()) {
 				if (previousLevelsFiles.isEmpty()) {
-					return;
+					return; // No more files anywhere
 				}
 				currentLevelFiles = previousLevelsFiles.pop();
 				continue;
 			}
 
-			File f = currentLevelFiles.next();
+			var f = currentLevelFiles.next();
 
 			if (f.isDirectory()) {
 				System.err.println(f.toString());
 				if (!f.canRead()) {
-					System.err.println("Warning: could not read directory " + f.toString());
+					System.err.println("Warning: could not read directory " + f);
 				} else if (Files.isSymbolicLink(f.toPath()) && !follow) {
-					System.err.println("Warning: Not Following " + f.toString() + " Symbolic Link");
+					System.err.println("Warning: Not Following " + f + " Symbolic Link");
 				} else {
-					File[] files = f.listFiles();
+					var files = f.listFiles();
 					if (files != null) {
+						// Save current level and dive into the subdirectory
 						previousLevelsFiles.push(currentLevelFiles);
 						currentLevelFiles = Arrays.asList(files).iterator();
 					} else {
-						System.err.println("Warning: could not list files in directory " + f.toString());
+						System.err.println("Warning: could not list files in directory " + f);
 					}
 				}
-				nextFile = f;
+				nextFile = f; // Return the directory itself as an entry
 			} else if (Files.isRegularFile(f.toPath())) {
 				nextFile = f;
 			} else {
-				System.err.println("Skipping special file: " + f.toString());
+				System.err.println("Skipping special file: " + f);
 			}
 		}
 	}
 
+	@Override
 	public boolean hasNext() {
 		if (nextFile == null) {
 			findNext();
@@ -102,21 +109,21 @@ class DirTreeIterator implements Iterator<File> {
 		return nextFile != null;
 	}
 
+	@Override
 	public File next() {
 		if (!hasNext()) {
 			throw new NoSuchElementException();
 		}
-		File result = nextFile;
+		var result = nextFile;
 		nextFile = null;
 		return result;
 	}
 
-	public void remove() {
-		throw new UnsupportedOperationException();
-	}
-
-	static public void main(String args[]) {
-		DirTreeIterator dt = new DirTreeIterator(new File("/tmp"), true);
+	/**
+	 * Simple test utility for local debugging.
+	 */
+	public static void main(String[] args) {
+		var dt = new DirTreeIterator(new File("/tmp"), true);
 		while (dt.hasNext()) {
 			System.out.println(dt.next().toString());
 		}
